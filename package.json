@@ -1,0 +1,9 @@
+{
+  "name": "dashboard-electron-supabase",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dashboard comercial de escritorio con Electron y Supabase",
+  "main": "main.js",
+  "scripts": { "start": "electron ." },
+  "devDependencies": { "electron": "44.4.5" }
+}

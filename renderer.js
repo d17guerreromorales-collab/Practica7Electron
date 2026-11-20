@@ -1,0 +1,98 @@
+const $ = (selector) => document.querySelector(selector);
+const state = { view: 'dashboard', data: { CLIENTES: [], PRODUCTOS: [], VENTAS: [] }, query: '', sortKey: 'name', sortAsc: true };
+const COLORS = ['#5279e8','#8d68db','#31ad83','#e6a33e','#e16f78','#46a8bd','#7f91a8','#d177aa'];
+const normalize = (v) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+const keyName = (s) => normalize(s).replace(/[^a-z0-9]/g,'');
+function value(row, candidates) {
+  if (!row) return undefined;
+  const entries = Object.entries(row);
+  for (const candidate of candidates) {
+    const wanted = keyName(candidate);
+    const found = entries.find(([k]) => keyName(k) === wanted);
+    if (found && found[1] !== null && found[1] !== '') return found[1];
+  }
+}
+function numberValue(v) { const n = Number(String(v ?? '').replace(/[^\d,.-]/g,'').replace(',','.')); return Number.isFinite(n) ? n : 0; }
+function currency(v) { return new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:2}).format(v || 0); }
+function showNotice(message, type='info') { const el=$('#notice'); el.textContent=message; el.className=`notice ${type}`; }
+function clearNotice() { $('#notice').className='notice hidden'; }
+function connection(ok, hint) { $('#connectionDot').classList.toggle('online',ok); $('#connectionLabel').textContent=ok?'Conectado':'Sin conectar'; $('#connectionHint').textContent=hint; }
+function showSettings() {
+  const saved=JSON.parse(localStorage.getItem('nexo.supabase') || '{}');
+  $('#supabaseUrl').value=saved.url || ''; $('#supabaseKey').value=saved.key || ''; $('#settingsError').textContent='';
+  $('#settingsDialog').showModal();
+}
+async function queryTable(base, apiKey, table) {
+  const url=`${base.replace(/\/$/,'')}/rest/v1/${encodeURIComponent(table)}?select=*`;
+  const rows=[]; let start=0;
+  while(true){
+    const response=await fetch(url,{headers:{apikey:apiKey,Accept:'application/json',Range:`${start}-${start+999}`},cache:'no-store'});
+    if (!response.ok) { const body=await response.text(); throw new Error(`${table}: ${response.status} ${body.slice(0,180)}`); }
+    const page=await response.json();
+    if (!Array.isArray(page)) throw new Error(`La respuesta de ${table} no contiene una lista de registros.`);
+    rows.push(...page); if(page.length<1000) break; start+=page.length;
+  }
+  return rows;
+}
+async function refreshData() {
+  const config=JSON.parse(localStorage.getItem('nexo.supabase') || '{}');
+  if (!config.url || !config.key) { connection(false,'Configura Supabase'); updateEmptyMetrics(); return; }
+  clearNotice(); connection(false,'Consultando datos…'); $('#refreshButton').textContent='…';
+  try {
+    const base=new URL(config.url).origin;
+    const results=await Promise.all(['Clientes','PRODUCTOS','VENTAS'].map(t=>queryTable(base,config.key,t)));
+    state.data={CLIENTES:results[0],PRODUCTOS:results[1],VENTAS:results[2]};
+    connection(true,'Datos actualizados'); $('#lastUpdated').textContent=`Actualizado ${new Intl.DateTimeFormat('es-MX',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`;
+    renderAll();
+  } catch (error) {
+    connection(false,'Error de conexión'); showNotice(`No se pudieron consultar las tablas de Supabase. ${error.message} Verifica la URL, la clave pública, los nombres de tabla y las políticas RLS.`,'error');
+  } finally { $('#refreshButton').textContent='↻'; }
+}
+function updateEmptyMetrics() { ['metricClients','metricProducts','metricSales'].forEach(id=>$('#'+id).textContent='—'); $('#metricRevenue').textContent='—'; }
+function renderMetrics() {
+  $('#metricClients').textContent=state.data.CLIENTES.length.toLocaleString('es-MX');
+  $('#metricProducts').textContent=state.data.PRODUCTOS.length.toLocaleString('es-MX');
+  $('#metricSales').textContent=state.data.VENTAS.length.toLocaleString('es-MX');
+  const revenue=state.data.VENTAS.reduce((sum,row)=>sum+numberValue(value(row,['importe','total','monto','subtotal','precio_total','amount','total_venta'])),0);
+  $('#metricRevenue').textContent=currency(revenue);
+}
+function monthKey(row) { const raw=value(row,['fecha','fecha_venta','created_at','createdAt','date','sale_date']); if (!raw) return null; const d=new Date(raw); return Number.isNaN(d.getTime())?null:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
+function monthLabel(key) { const [y,m]=key.split('-').map(Number); return new Intl.DateTimeFormat('es-MX',{month:'short'}).format(new Date(y,m-1,1)).replace('.',''); }
+function drawLineBars(canvas, labels, values) {
+  const ctx=canvas.getContext('2d'), rect=canvas.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+  canvas.width=Math.max(1,rect.width*dpr); canvas.height=Math.max(1,rect.height*dpr); ctx.setTransform(dpr,0,0,dpr,0,0);
+  const w=rect.width,h=rect.height,left=42,right=10,top=10,bottom=28,plotW=w-left-right,plotH=h-top-bottom;
+  ctx.clearRect(0,0,w,h); const max=Math.max(...values,1); ctx.font='10px Segoe UI';
+  for(let i=0;i<=3;i++){const y=top+plotH*i/3;ctx.strokeStyle='#edf0f5';ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(w-right,y);ctx.stroke();ctx.fillStyle='#9aa4b2';ctx.textAlign='right';ctx.fillText(i===0?currency(max).replace(/[\d.,]/g,'').trim():new Intl.NumberFormat('es-MX',{notation:'compact',maximumFractionDigits:1}).format(max*(1-i/3)),left-7,y+3);}
+  const step=plotW/Math.max(values.length,1),bw=Math.min(30,step*.56);
+  values.forEach((v,i)=>{const bh=(v/max)*plotH,x=left+i*step+(step-bw)/2,y=top+plotH-bh;const grad=ctx.createLinearGradient(0,y,0,top+plotH);grad.addColorStop(0,'#6689f3');grad.addColorStop(1,'#b7c8ff');ctx.fillStyle=grad;roundRect(ctx,x,y,bw,bh,4);ctx.fill();ctx.fillStyle='#909baa';ctx.textAlign='center';ctx.fillText(labels[i]||'',x+bw/2,h-7);});
+}
+function roundRect(ctx,x,y,w,h,r){if(h<=0)return;ctx.beginPath();ctx.roundRect(x,y,w,h,Math.min(r,w/2,h/2));}
+function drawDonut(canvas, groups) {
+  const ctx=canvas.getContext('2d'),rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,rect.width,rect.height);
+  const total=groups.reduce((s,x)=>s+x.value,0),cx=rect.width/2,cy=rect.height/2,r=Math.min(cx,cy)-5,inner=r*.64;let angle=-Math.PI/2;
+  if(!total){ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.arc(cx,cy,inner,Math.PI*2,0,true);ctx.fillStyle='#edf0f5';ctx.fill('evenodd');ctx.fillStyle='#8b96a5';ctx.font='10px Segoe UI';ctx.textAlign='center';ctx.fillText('Sin datos',cx,cy+3);return;}
+  groups.forEach((g,i)=>{const end=angle+g.value/total*Math.PI*2;ctx.beginPath();ctx.arc(cx,cy,r,angle,end);ctx.arc(cx,cy,inner,end,angle,true);ctx.closePath();ctx.fillStyle=COLORS[i%COLORS.length];ctx.fill();angle=end;});
+  ctx.fillStyle='#26364c';ctx.font='700 17px Segoe UI';ctx.textAlign='center';ctx.fillText(String(total),cx,cy+2);ctx.fillStyle='#98a2b0';ctx.font='9px Segoe UI';ctx.fillText('productos',cx,cy+16);
+}
+function salesSeries() { const map=new Map(); state.data.VENTAS.forEach(row=>{const key=monthKey(row);if(key)map.set(key,(map.get(key)||0)+numberValue(value(row,['importe','total','monto','subtotal','precio_total','amount','total_venta'])));}); return [...map].sort(([a],[b])=>a.localeCompare(b)).slice(-6); }
+function categorySeries(){const map=new Map();state.data.PRODUCTOS.forEach(row=>{const k=String(value(row,['categoria','category','tipo'])||'Sin categoría');map.set(k,(map.get(k)||0)+1);});return [...map].map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,7);}
+function topProductsSeries(){const products=state.data.PRODUCTOS,sales=state.data.VENTAS,map=new Map();sales.forEach(s=>{const id=value(s,['id_producto','producto_id','product_id','producto']);const qty=numberValue(value(s,['cantidad','quantity','unidades']))||1;const product=products.find(p=>String(value(p,['id','id_producto','producto_id']))===String(id));const name=product?value(product,['nombre','name','producto']):String(id||'Producto');map.set(name,(map.get(name)||0)+qty);});return [...map].map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,5);}
+function renderCharts(){const series=salesSeries();drawLineBars($('#monthlyChart'),series.map(([k])=>monthLabel(k)),series.map(([,v])=>v));const cats=categorySeries();drawDonut($('#categoryChart'),cats);$('#categoryLegend').innerHTML=cats.length?cats.map((x,i)=>`<div class="legend-item"><i class="legend-swatch" style="background:${COLORS[i%COLORS.length]}"></i><span>${escapeHtml(x.label)}</span><b>${x.value}</b></div>`).join(''):'<div class="legend-item">Sin categorías registradas</div>';drawHorizontal($('#topProductsChart'),topProductsSeries());}
+function drawHorizontal(canvas, rows){const ctx=canvas.getContext('2d'),rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,rect.width,rect.height);const left=Math.min(180,rect.width*.38),right=34,rowH=32,max=Math.max(...rows.map(x=>x.value),1);ctx.font='10px Segoe UI';if(!rows.length){ctx.fillStyle='#97a1af';ctx.textAlign='center';ctx.fillText('Los datos de ventas aparecerán aquí',rect.width/2,rect.height/2);return;}rows.forEach((r,i)=>{const y=13+i*rowH;ctx.fillStyle='#69788d';ctx.textAlign='right';ctx.fillText(r.label.length>26?r.label.slice(0,24)+'…':r.label,left-10,y+10);ctx.fillStyle='#f0f3f8';ctx.fillRect(left,y,rect.width-left-right,12);const bw=(rect.width-left-right)*r.value/max;ctx.fillStyle=COLORS[i%COLORS.length];roundRect(ctx,left,y,bw,12,5);ctx.fill();ctx.textAlign='left';ctx.fillStyle='#768398';ctx.fillText(String(r.value),left+bw+6,y+10);});}
+function escapeHtml(text){return String(text??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function personName(row,table){return value(row,['nombre','name','nombre_completo','razon_social','correo','email'])||`${table==='CLIENTES'?'Cliente':'Registro'} ${value(row,['id'])??''}`;}
+function saleRows(rows){return rows.map(r=>{const clientId=value(r,['id_cliente','cliente_id','customer_id']);const client=state.data.CLIENTES.find(c=>String(value(c,['id','id_cliente']))===String(clientId));const productId=value(r,['id_producto','producto_id','product_id']);const product=state.data.PRODUCTOS.find(p=>String(value(p,['id','id_producto']))===String(productId));const d=value(r,['fecha','fecha_venta','created_at','date']);return {Fecha:d?new Intl.DateTimeFormat('es-MX',{dateStyle:'medium'}).format(new Date(d)):'—',Cliente:client?personName(client,'CLIENTES'):String(value(r,['cliente','nombre_cliente'])||'—'),Producto:product?String(value(product,['nombre','name'])):String(value(r,['producto','nombre_producto'])||'—'),Cantidad:value(r,['cantidad','quantity'])??'—',Importe:currency(numberValue(value(r,['importe','total','monto','subtotal','precio_total','amount','total_venta'])))};});}
+function genericRows(table){return table.map(row=>{const out={};for(const [k,v] of Object.entries(row)){if(v!==null&&typeof v!=='object')out[k]=String(v);}return out;});}
+function makeTable(rows){if(!rows.length)return '<div class="empty-state"><b>No hay registros para mostrar</b>Cuando Supabase devuelva datos, aparecerán aquí.</div>';const cols=Object.keys(rows[0]);return `<table class="data-table"><thead><tr>${cols.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${cols.map(c=>`<td>${escapeHtml(row[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;}
+function renderRecent(){const recent=saleRows([...state.data.VENTAS].sort((a,b)=>new Date(value(b,['fecha','fecha_venta','created_at','date'])||0)-new Date(value(a,['fecha','fecha_venta','created_at','date'])||0)).slice(0,5));$('#recentSales').innerHTML=makeTable(recent);}
+function renderCurrentTable(){const table={ventas:'VENTAS',productos:'PRODUCTOS',clientes:'CLIENTES'}[state.view];if(!table)return;let source=state.data[table];if(table==='VENTAS'){const from=$('#dateFrom').value,to=$('#dateTo').value;source=source.filter(row=>{const raw=value(row,['fecha','fecha_venta','created_at','date']);if(!raw)return !from&&!to;const day=String(raw).slice(0,10);return(!from||day>=from)&&(!to||day<=to);});}let rows=table==='VENTAS'?saleRows(source):genericRows(source);const q=normalize(state.query);if(q)rows=rows.filter(r=>normalize(Object.values(r).join(' ')).includes(q));if(table==='PRODUCTOS'){const selected=$('#sortSelect').value;rows.sort((a,b)=>{const candidates=selected==='price'?['precio','price','costo']:selected==='stock'?['existencia','stock','inventario','cantidad']:['nombre','name','producto'];const av=value(a,candidates)||'',bv=value(b,candidates)||'';const cmp=typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'es',{numeric:true,sensitivity:'base'});return state.sortAsc?cmp:-cmp;});}$('#tableMeta').textContent=`${rows.length.toLocaleString('es-MX')} registro${rows.length===1?'':'s'} · ${table.toLowerCase()}`;$('#dataTable').innerHTML=makeTable(rows);}
+function renderAll(){renderMetrics();renderCharts();renderRecent();renderCurrentTable();}
+function setView(view){state.view=view;document.querySelectorAll('.nav-item[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));const dash=view==='dashboard';$('#dashboardView').classList.toggle('hidden',!dash);$('#tableView').classList.toggle('hidden',dash);const titles={ventas:['Ventas','MOVIMIENTOS','Consulta, filtra y revisa el detalle de tus ventas.'],productos:['Productos','CATÁLOGO','Busca y ordena los productos de tu catálogo.'],clientes:['Clientes','DIRECTORIO','Consulta los clientes registrados en tu base de datos.']};if(!dash){const [title,eyebrow,desc]=titles[view];$('#crumbTitle').textContent=title;$('#sectionTitle').textContent=title;$('#sectionEyebrow').textContent=eyebrow;$('#sectionDescription').textContent=desc;$('#dateFilter').classList.toggle('hidden',view!=='ventas');$('#sortFilter').classList.toggle('hidden',view!=='productos');$('#searchInput').value=state.query;renderCurrentTable();}else $('#crumbTitle').textContent='Resumen';}
+document.querySelectorAll('.nav-item[data-view]').forEach(button=>button.addEventListener('click',()=>setView(button.dataset.view)));
+document.querySelectorAll('[data-goto]').forEach(button=>button.addEventListener('click',()=>setView(button.dataset.goto)));
+$('#openSettings').addEventListener('click',showSettings);$('#configureButton').addEventListener('click',showSettings);$('#refreshButton').addEventListener('click',refreshData);$('#sectionRefresh').addEventListener('click',refreshData);
+$('#searchInput').addEventListener('input',e=>{state.query=e.target.value;renderCurrentTable();});$('#dateFrom').addEventListener('change',renderCurrentTable);$('#dateTo').addEventListener('change',renderCurrentTable);$('#sortSelect').addEventListener('change',renderCurrentTable);$('#sortDirection').addEventListener('click',()=>{state.sortAsc=!state.sortAsc;$('#sortDirection').textContent=state.sortAsc?'↑':'↓';renderCurrentTable();});
+$('#settingsForm').addEventListener('submit',async e=>{e.preventDefault();const button=$('#saveSettings');const url=$('#supabaseUrl').value.trim().replace(/\/$/,'');const key=$('#supabaseKey').value.trim();try{const parsed=new URL(url);if(parsed.protocol!=='https:'||!parsed.hostname.endsWith('.supabase.co'))throw new Error('Usa la URL HTTPS de tu proyecto, por ejemplo https://proyecto.supabase.co.');if(!key)throw new Error('Escribe la clave pública (publishable o anon).');button.disabled=true;button.textContent='Conectando…';$('#settingsError').textContent='';localStorage.setItem('nexo.supabase',JSON.stringify({url,key}));await refreshData();if(state.data.CLIENTES.length||state.data.PRODUCTOS.length||state.data.VENTAS.length||!$('#notice').classList.contains('error'))$('#settingsDialog').close();else throw new Error('No fue posible conectar. Revisa la URL, la clave y las políticas RLS.');}catch(error){$('#settingsError').textContent=error.message;}finally{button.disabled=false;button.textContent='Guardar y conectar';}});
+window.addEventListener('resize',()=>{if(state.view==='dashboard')renderCharts();});
+const savedConfig=JSON.parse(localStorage.getItem('nexo.supabase')||'{}');if(savedConfig.url&&savedConfig.key)refreshData();else setTimeout(showSettings,350);

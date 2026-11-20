@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://*.supabase.co">
+  <title>Nexo · Dashboard comercial</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#dashboard" aria-label="Nexo inicio"><span class="brand-mark">N</span><span>Nexo<span class="brand-sub">COMERCIAL</span></span></a>
+      <div class="nav-caption">ESPACIO DE TRABAJO</div>
+      <nav aria-label="Secciones">
+        <button class="nav-item active" data-view="dashboard"><span class="nav-icon">◫</span>Resumen</button>
+        <button class="nav-item" data-view="ventas"><span class="nav-icon">↗</span>Ventas</button>
+        <button class="nav-item" data-view="productos"><span class="nav-icon">▦</span>Productos</button>
+        <button class="nav-item" data-view="clientes"><span class="nav-icon">◎</span>Clientes</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="connection-card"><span id="connectionDot" class="status-dot"></span><span><b id="connectionLabel">Sin conectar</b><small id="connectionHint">Configura Supabase</small></span></div>
+        <button class="nav-item settings-link" id="openSettings"><span class="nav-icon">⚙</span>Configuración</button>
+        <div class="user-chip"><div class="avatar">NC</div><span><b>Panel comercial</b><small>Administrador</small></span></div>
+      </div>
+    </aside>
+    <main class="main-area">
+      <header class="topbar"><div class="crumb">Workspace <span>/</span> <b id="crumbTitle">Resumen</b></div><div class="top-actions"><span id="lastUpdated" class="muted">Datos pendientes</span><button class="icon-button" id="refreshButton" title="Actualizar datos" aria-label="Actualizar datos">↻</button><button class="avatar small-avatar" aria-label="Usuario">NC</button></div></header>
+      <div class="content">
+        <div id="notice" class="notice hidden" role="status"></div>
+        <section id="dashboardView" class="view">
+          <div class="page-heading"><div><div class="eyebrow">VISTA GENERAL</div><h1>Resumen comercial</h1><p>Una mirada clara al estado de tu operación.</p></div><button class="primary-button" id="configureButton">＋ Conectar Supabase</button></div>
+          <div class="metric-grid">
+            <article class="metric-card"><div class="metric-top"><span>Clientes registrados</span><span class="metric-icon blue">◎</span></div><strong id="metricClients">—</strong><small>Total en la base de datos</small></article>
+            <article class="metric-card"><div class="metric-top"><span>Productos disponibles</span><span class="metric-icon violet">▦</span></div><strong id="metricProducts">—</strong><small>Productos en el catálogo</small></article>
+            <article class="metric-card"><div class="metric-top"><span>Ventas realizadas</span><span class="metric-icon green">↗</span></div><strong id="metricSales">—</strong><small>Registros de ventas</small></article>
+            <article class="metric-card"><div class="metric-top"><span>Ingresos acumulados</span><span class="metric-icon amber">＄</span></div><strong id="metricRevenue">—</strong><small>Suma de importes registrados</small></article>
+          </div>
+          <div class="chart-grid"><article class="panel chart-panel"><div class="panel-heading"><div><h2>Ventas por mes</h2><p>Importe vendido según fecha</p></div><span class="legend"><i class="legend-dot"></i>Ingresos</span></div><div class="chart-wrap"><canvas id="monthlyChart" aria-label="Gráfica de ventas por mes"></canvas></div></article><article class="panel chart-panel"><div class="panel-heading"><div><h2>Productos por categoría</h2><p>Distribución del catálogo</p></div></div><div class="donut-layout"><canvas id="categoryChart" aria-label="Gráfica de productos por categoría"></canvas><div id="categoryLegend" class="category-legend"></div></div></article></div>
+          <article class="panel chart-panel top-products-panel"><div class="panel-heading"><div><h2>Productos más vendidos</h2><p>Los cinco productos con mayor cantidad vendida</p></div></div><div class="chart-wrap horizontal-chart"><canvas id="topProductsChart" aria-label="Gráfica de productos más vendidos"></canvas></div></article>
+          <article class="panel recent-panel"><div class="panel-heading"><div><h2>Ventas recientes</h2><p>Últimos movimientos registrados</p></div><button class="text-button" data-goto="ventas">Ver todas →</button></div><div id="recentSales" class="table-scroll"></div></article>
+        </section>
+        <section id="tableView" class="view hidden">
+          <div class="page-heading"><div><div class="eyebrow" id="sectionEyebrow">REGISTROS</div><h1 id="sectionTitle">Ventas</h1><p id="sectionDescription">Consulta los registros de tu base de datos.</p></div><button class="secondary-button" id="sectionRefresh">↻ Actualizar</button></div>
+          <div class="panel toolbar"><label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="Buscar en los registros…"></label><div id="dateFilter" class="date-filter hidden"><label>Desde <input type="date" id="dateFrom"></label><label>Hasta <input type="date" id="dateTo"></label></div><div id="sortFilter" class="sort-filter hidden"><label>Ordenar por <select id="sortSelect"><option value="name">Nombre</option><option value="price">Precio</option><option value="stock">Existencia</option></select></label><button class="sort-direction" id="sortDirection" title="Cambiar dirección">↑</button></div></div>
+          <div class="panel data-panel"><div id="tableMeta" class="table-meta"></div><div id="dataTable" class="table-scroll"></div></div>
+        </section>
+        <footer class="footer">Nexo Dashboard <span>·</span> Tus datos se consultan directamente desde Supabase.</footer>
+      </div>
+    </main>
+  </div>
+  <dialog id="settingsDialog" class="settings-dialog"><form method="dialog" id="settingsForm"><div class="dialog-heading"><div><div class="eyebrow">INTEGRACIÓN DE DATOS</div><h2>Conectar Supabase</h2></div><button class="icon-button close-button" value="cancel" aria-label="Cerrar">×</button></div><p class="dialog-copy">Introduce la URL del proyecto y su clave pública (publishable o anon). La conexión consulta las tablas CLIENTES, PRODUCTOS y VENTAS mediante la API REST.</p><label class="field-label">URL del proyecto<input id="supabaseUrl" type="url" placeholder="https://tu-proyecto.supabase.co" required></label><label class="field-label">Clave pública<input id="supabaseKey" type="password" placeholder="sb_publishable_… o clave anon" required autocomplete="off"></label><div class="schema-box"><b>Tablas esperadas</b><span>CLIENTES · PRODUCTOS · VENTAS</span><small>El acceso depende de las políticas RLS configuradas en Supabase.</small></div><div class="dialog-actions"><button class="secondary-button" value="cancel">Cancelar</button><button class="primary-button" id="saveSettings" value="default">Guardar y conectar</button></div><p id="settingsError" class="form-error"></p></form></dialog>
+  <script src="renderer.js"></script>
+</body>
+</html>
