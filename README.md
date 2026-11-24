@@ -7,7 +7,18 @@
 3. Ejecuta `npm start` para abrir el programa de escritorio.
 4. En **Configuración**, pega la URL de tu proyecto Supabase y una clave pública `publishable` o `anon`.
 
-La aplicación consulta las tablas `CLIENTES`, `PRODUCTOS` y `VENTAS` mediante la API REST de Supabase. Usa la clave pública únicamente; nunca pegues una clave `service_role` o secreta. Las consultas requieren políticas RLS que permitan la lectura correspondiente.
+La aplicación consulta las tablas `Clientes`, `PRODUCTOS` y `VENTAS` mediante la API REST de Supabase. Usa la clave pública únicamente; nunca pegues una clave `service_role` o secreta. Las consultas requieren políticas RLS que permitan la lectura correspondiente.
+
+## Práctica 6: CRUD y ventas
+
+- En **Clientes**, crea, busca, edita y elimina clientes. El formulario valida nombre, correo y teléfono.
+- En **Productos**, crea, busca, ordena, edita y elimina productos. Valida precio mayor que cero y existencia como entero no negativo.
+- En **Ventas**, elige cliente, producto y cantidad. La app muestra el precio y total estimado y llama al RPC; no inserta ventas desde el renderer directamente.
+- Para crear el procedimiento en Supabase, abre **SQL Editor**, pega `sql/registrar_venta.sql` y ejecútalo. El procedimiento valida cliente/producto/cantidad, descuenta inventario con actualización atómica y agrega la venta.
+
+La consulta de esquema del proyecto confirmó las columnas `Clientes(id_cliente, nombre, correo, telefono, fecha_registro)`, `PRODUCTOS(id_producto, nombre, categoria, precio, existencia)` y `VENTAS(id_venta, id_cliente, id_producto, cantidad, fecha_venta, total)`. No se encontró una función de ventas ya instalada; por eso se incluye el SQL requerido.
+
+**Permisos Supabase:** la app no cambia políticas RLS. Configura las políticas de lectura y escritura para tu modelo de acceso antes de usar el CRUD; la función se define como `SECURITY INVOKER` y respeta esas políticas. Sin políticas de escritura adecuadas, las operaciones serán rechazadas por Supabase. La eliminación de cliente o producto vinculado a una venta se bloquea por integridad referencial.
 
 ## Datos que utiliza
 
